@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LogSight — Enterprise Log Analyzer</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+
+<div class="app">
+  <header class="topbar">
+    <div class="brand">
+      <div class="brand-mark">LS</div>
+      <div class="brand-text">
+        <h1>LogSight</h1>
+        <span>Enterprise Log &amp; IPG Analyzer</span>
+      </div>
+    </div>
+  </header>
+
+  <section class="drop-section">
+    <form action="/analyze" method="POST" enctype="multipart/form-data" id="uploadForm">
+      <div class="drop-zone" id="dropZone">
+        <div class="drop-icon">⇪</div>
+        <h2>Drop log files here</h2>
+        <p>Supports .log, .txt, access logs (CLF/Combined), syslog, and generic app logs. Multiple files accepted.</p>
+
+        {% if error %}
+        <div class="error-banner">{{ error }}</div>
+        {% endif %}
+
+        <input type="file" name="files" id="fileInput" multiple accept=".log,.txt,.csv" required>
+        <div id="fileListLabel" class="file-list-label"></div>
+
+        <button type="submit" class="btn btn-primary" id="submitBtn">Generate Report</button>
+        <span class="drop-hint">Files are processed on your local Flask server only.</span>
+      </div>
+    </form>
+  </section>
+
+  <footer class="app-footer">
+    <span>LogSight v2.0 — server-rendered report</span>
+  </footer>
+</div>
+
+<script>
+  const dropZone = document.getElementById('dropZone');
+  const fileInput = document.getElementById('fileInput');
+  const fileListLabel = document.getElementById('fileListLabel');
+  const uploadForm = document.getElementById('uploadForm');
+  const submitBtn = document.getElementById('submitBtn');
+
+  function updateLabel(){
+    if(fileInput.files.length){
+      const names = Array.from(fileInput.files).map(f => f.name).join(', ');
+      fileListLabel.textContent = `${fileInput.files.length} file(s): ${names}`;
+    } else {
+      fileListLabel.textContent = '';
+    }
+  }
+
+  fileInput.addEventListener('change', updateLabel);
+
+  ['dragenter','dragover'].forEach(evt =>
+    dropZone.addEventListener(evt, e => { e.preventDefault(); dropZone.classList.add('dragover'); }));
+  ['dragleave'].forEach(evt =>
+    dropZone.addEventListener(evt, e => { e.preventDefault(); dropZone.classList.remove('dragover'); }));
+
+  dropZone.addEventListener('drop', e => {
+    e.preventDefault();
+    dropZone.classList.remove('dragover');
+    if(e.dataTransfer.files.length){
+      fileInput.files = e.dataTransfer.files;
+      updateLabel();
+    }
+  });
+
+  uploadForm.addEventListener('submit', () => {
+    submitBtn.textContent = 'Processing…';
+    submitBtn.disabled = true;
+  });
+</script>
+</body>
+</html>

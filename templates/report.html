@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LogSight Report — {{ generated_at }}</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+
+<div class="app">
+  <header class="topbar">
+    <div class="brand">
+      <div class="brand-mark">LS</div>
+      <div class="brand-text">
+        <h1>LogSight</h1>
+        <span>Report generated {{ generated_at }}</span>
+      </div>
+    </div>
+    <div class="topbar-actions">
+      <span class="pill">{{ filenames|length }} file(s): {{ filenames|join(', ') }}</span>
+      <a href="/" class="btn btn-ghost">New Analysis</a>
+    </div>
+  </header>
+
+  <main class="dashboard">
+
+    <section class="kpi-grid">
+      <div class="kpi-card">
+        <div class="kpi-label">Total Log Lines</div>
+        <div class="kpi-value">{{ "{:,}".format(stats.total) }}</div>
+      </div>
+
+      <div class="kpi-card {% if stats.level_counts.get('ERROR', 0) > 0 %}bad{% else %}good{% endif %}">
+        <div class="kpi-label">Errors</div>
+        <div class="kpi-value">{{ "{:,}".format(stats.level_counts.get('ERROR', 0)) }}</div>
+        <div class="kpi-sub">{{ stats.error_rate }}% of total</div>
+      </div>
+
+      <div class="kpi-card {% if stats.level_counts.get('WARN', 0) > 0 %}warn{% endif %}">
+        <div class="kpi-label">Warnings</div>
+        <div class="kpi-value">{{ "{:,}".format(stats.level_counts.get('WARN', 0)) }}</div>
+      </div>
+
+      <div class="kpi-card">
+        <div class="kpi-label">Unique IPs</div>
+        <div class="kpi-value">{{ stats.unique_ips }}</div>
+      </div>
+
+      <div class="kpi-card">
+        <div class="kpi-label">Time Span</div>
+        <div class="kpi-value">{{ stats.span_label if stats.span_label else "—" }}</div>
+        {% if stats.time_range %}
+        <div class="kpi-sub">{{ stats.time_range.start }} → {{ stats.time_range.end }}</div>
+        {% endif %}
+      </div>
+    </section>
+
+    <section class="panel-grid">
+      <div class="panel panel-wide">
+        <div class="panel-head"><h3>Event Volume Over Time</h3></div>
+        <canvas id="timelineChart" height="90"></canvas>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head"><h3>Severity Breakdown</h3></div>
+        <canvas id="levelChart" height="200"></canvas>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head"><h3>Status Codes</h3></div>
+        <canvas id="statusChart" height="200"></canvas>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head"><h3>Top Source IPs</h3></div>
+        <table class="mini-table"><tbody>
+          {% for ip, count in stats.top_ips %}
+          <tr>
+            <td class="bar-cell">
+              <span class="bar-fill" style="width:{{ (count / (stats.total if stats.total else 1) * 100)|round(1) }}%"></span>
+              <span style="position:relative">{{ ip }}</span>
+            </td>
+            <td>{{ count }}</td>
+          </tr>
+          {% else %}
+          <tr><td colspan="2" style="color:#5b6674">No data</td></tr>
+          {% endfor %}
+        </tbody></table>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head"><h3>Top Error Signatures</h3></div>
+        <table class="mini-table"><tbody>
+          {% set max_err = stats.level_counts.get('ERROR', 0) %}
+          {% for sig, count in stats.top_errors %}
+          <tr>
+            <td class="bar-cell">
+              <span class="bar-fill" style="width:{{ (count / (max_err if max_err else 1) * 100)|round(1) }}%"></span>
+              <span style="position:relative">{{ sig }}</span>
+            </td>
+            <td>{{ count }}</td>
+          </tr>
+          {% else %}
+          <tr><td colspan="2" style="color:#5b6674">No errors found</td></tr>
+          {% endfor %}
+        </tbody></table>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-head">
+        <h3>Log Explorer</h3>
+        <span class="panel-sub">Showing {{ shown_entries }} of {{ "{:,}".format(total_entries) }} entries</span>
+      </div>
+      <div class="table-wrap">
+        <table class="log-table">
+          <thead>
+            <tr><th>Time</th><th>Level</th><th>Source</th><th>IP</th><th>Message</th></tr>
+          </thead>
+          <tbody>
+            {% for e in entries %}
+            <tr>
+              <td>
+                {% if e.timestamp %}{{ e.timestamp[:16].replace('T',' ') }}{% else %}—{% endif %}
+              </td>
+              <td><span class="badge badge-{{ e.level }}">{{ e.level }}</span></td>
+              <td>{{ e.source }}</td>
+              <td>{{ e.ip if e.ip else "—" }}</td>
+              <td>{{ e.message }}</td>
+            </tr>
+            {% else %}
+            <tr><td colspan="5" style="text-align:center;color:#5b6674;padding:20px">No entries</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+  </main>
+
+  <footer class="app-footer">
+    <span>LogSight v2.0 — generated {{ generated_at }}</span>
+  </footer>
+</div>
+
+<script>
+  const LEVEL_COLORS = { ERROR: "#e0605c", WARN: "#e0a94d", INFO: "#5b8def", DEBUG: "#6b7685" };
+  const buckets = {{ buckets_json|safe }};
+  const levelCounts = {{ level_counts_json|safe }};
+  const statusCounts = {{ status_counts_json|safe }};
+
+  if (buckets.length) {
+    new Chart(document.getElementById('timelineChart'), {
+      type: 'line',
+      data: {
+        labels: buckets.map(b => b.label),
+        datasets: ['ERROR','WARN','INFO','DEBUG'].map(lvl => ({
+          label: lvl,
+          data: buckets.map(b => b[lvl]),
+          borderColor: LEVEL_COLORS[lvl],
+          backgroundColor: LEVEL_COLORS[lvl] + "22",
+          fill: lvl === 'ERROR',
+          tension: 0.3,
+          pointRadius: 0,
+          borderWidth: 2
+        }))
+      },
+      options: {
+        responsive: true,
+        interaction: { mode: 'index', intersect: false },
+        plugins: { legend: { labels: { color: '#8b98a9', boxWidth: 10, font: { size: 11 } } } },
+        scales: {
+          x: { ticks: { color: '#5b6674', maxTicksLimit: 8, font: { size: 10 } }, grid: { color: '#1c232e' } },
+          y: { ticks: { color: '#5b6674', font: { size: 10 } }, grid: { color: '#1c232e' }, beginAtZero: true }
+        }
+      }
+    });
+  }
+
+  const levelLabels = Object.keys(levelCounts).filter(k => levelCounts[k] > 0);
+  if (levelLabels.length) {
+    new Chart(document.getElementById('levelChart'), {
+      type: 'doughnut',
+      data: {
+        labels: levelLabels,
+        datasets: [{ data: levelLabels.map(l => levelCounts[l]), backgroundColor: levelLabels.map(l => LEVEL_COLORS[l]), borderWidth: 0 }]
+      },
+      options: {
+        plugins: { legend: { position: 'bottom', labels: { color: '#8b98a9', boxWidth: 10, font: { size: 11 } } } },
+        cutout: '65%'
+      }
+    });
+  }
+
+  const statusLabels = Object.keys(statusCounts);
+  if (statusLabels.length) {
+    const colors = { "2xx": "#4fb3a9", "3xx": "#5b8def", "4xx": "#e0a94d", "5xx": "#e0605c" };
+    new Chart(document.getElementById('statusChart'), {
+      type: 'bar',
+      data: { labels: statusLabels, datasets: [{ data: statusLabels.map(l => statusCounts[l]), backgroundColor: statusLabels.map(l => colors[l] || '#6b7685') }] },
+      options: {
+        plugins: { legend: { display: false } },
+        scales: {
+          x: { ticks: { color: '#8b98a9' }, grid: { display: false } },
+          y: { ticks: { color: '#5b6674' }, grid: { color: '#1c232e' }, beginAtZero: true }
+        }
+      }
+    });
+  }
+</script>
+</body>
+</html>
